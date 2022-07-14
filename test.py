@@ -50,6 +50,11 @@ if __name__ == '__main__':
 
     es.indices.refresh(index="test-index")
 
+    text_query = {"match": {"text": "love"}}
+
+    resp = es.search(index="test-index", body={"query": text_query})
+    max_score = resp['hits']['hits'][0]["_score"]
+
     resp = es.search(index="test-index", body=
     {
         "query": {
@@ -58,7 +63,7 @@ if __name__ == '__main__':
                     "match_all": {}
                 },
                 "script": {
-                    "source": "1-1/(cosineSimilarity(params.query_vector, 'vector') + 1.0)",
+                    "source": "1/(1-(cosineSimilarity(params.query_vector, 'vector') + 1.0)/2+0.1)",
                     "params": {
                         "query_vector": [2, 2, 2, 2, 2]
                     }
@@ -71,11 +76,12 @@ if __name__ == '__main__':
                 "score_mode": "total",
                 "rescore_query": {
                     "script_score": {
-                        "query": {
-                            "match": {"text": "love"}
-                        },
+                        "query": text_query,
                         "script": {
-                            "source": "1-1/_score",
+                            "source": "1/(1-(_score/params.max_score))",
+                            "params": {
+                                "max_score": max_score,
+                            }
                         }
                     }
                 },
