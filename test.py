@@ -78,7 +78,7 @@ if __name__ == '__main__':
                     "script_score": {
                         "query": text_query,
                         "script": {
-                            "source": "1/(1-(_score/params.max_score))",
+                            "source": "1/(1-(_score/params.max_score)+0.1)",
                             "params": {
                                 "max_score": max_score,
                             }
