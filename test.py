@@ -14,7 +14,10 @@ def read_csv(filename):
         headers = next(file_data)
         return [dict(zip(headers, i)) for i in file_data]
 
+
 dim = 768
+n = 1000
+qid = 500
 
 if __name__ == '__main__':
     mapping = {
@@ -34,14 +37,14 @@ if __name__ == '__main__':
     es.options(ignore_status=[400, 404]).indices.create(index="test-index", body=mapping)
 
     docs = read_csv('sample-movies-vec.csv')
-    n = len(docs)
+
     actions = [
         {
             "_index": "test-index",
             "_id": id,
             "_source": {
-            "text": movie['description'],
-            'vector': ast.literal_eval(movie['desc_vec'])[:dim]}
+                "text": movie['description'],
+                'vector': ast.literal_eval(movie['desc_vec'])[:dim]}
         }
         for id, movie in enumerate(docs[:n])
     ]
@@ -49,12 +52,15 @@ if __name__ == '__main__':
 
     es.indices.refresh(index="test-index")
 
-    text_query = {"match": {"text": "love"}}
-
+    # first round, compute max_score for text search
+    text_query = {"match": {"text": "betrayal"}}
     resp = es.search(index="test-index", body={"query": text_query})
     max_score = resp['hits']['hits'][0]["_score"]
 
-    resp = es.search(index="test-index", body=
+    vector_query = [sum(value) for value in zip(ast.literal_eval(docs[qid]['desc_vec'])[:dim], [0.0001]*dim)]
+
+    # second and third round, compute vector score followd by text score as rescore
+    resp = es.search(index="test-index", size=100, body=
     {
         "query": {
             "script_score": {
@@ -62,22 +68,22 @@ if __name__ == '__main__':
                     "match_all": {}
                 },
                 "script": {
-                    "source": "1/(1-(cosineSimilarity(params.query_vector, 'vector') + 1.0)/2+0.1)",
+                    "source": "1/(1-(cosineSimilarity(params.query_vector, 'vector') + 1.0)/2.2)",
                     "params": {
-                        "query_vector": [1] * dim
+                        "query_vector": vector_query
                     }
                 }
             }
         },
         "rescore": {
-            "window_size": 100,
+            "window_size": n,
             "query": {
                 "score_mode": "total",
                 "rescore_query": {
                     "script_score": {
                         "query": text_query,
                         "script": {
-                            "source": "1/(1-(_score/params.max_score)+0.1)",
+                            "source": "1/(1-_score/params.max_score/1.1)",
                             "params": {
                                 "max_score": max_score,
                             }
@@ -93,5 +99,5 @@ if __name__ == '__main__':
 
     print("Got %d Hits:" % resp['hits']['total']['value'])
     for hit in resp['hits']['hits']:
-        print(hit["_score"])
-        print("%(text)s" % hit["_source"])
+        print("id: {}\t||\tscore: {}".format(hit["_id"], hit["_score"]))
+        print("text: %(text)s" % hit["_source"])
