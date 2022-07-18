@@ -23,7 +23,7 @@ def read_csv(filename):
 
 dim = 768
 n = 1000
-qid = 500
+query_text = "dig the loss of a patient"
 
 if __name__ == '__main__':
     mapping = {
@@ -59,12 +59,12 @@ if __name__ == '__main__':
     es.indices.refresh(index="test-index")
 
     # first round, compute max_score for text search
-    text_query = {"match": {"text": "betrayal"}}
+    text_query = {"match": {"text": query_text}}
     resp = es.search(index="test-index", body={"query": text_query})
     max_score = resp['hits']['hits'][0]["_score"]
 
-    vector_query = [sum(value) for value in zip(ast.literal_eval(docs[qid]['desc_vec'])[:dim], [0.0001]*dim)]
-
+    # vector_query = [sum(value) for value in zip(ast.literal_eval(docs[qid]['desc_vec'])[:dim], [0.0001]*dim)]
+    vector_query = gen_vec(query_text)
     # second and third round, compute vector score followd by text score as rescore
     resp = es.search(index="test-index", size=100, body=
     {
@@ -75,6 +75,7 @@ if __name__ == '__main__':
                 },
                 "script": {
                     "source": "1/(1-(cosineSimilarity(params.query_vector, 'vector') + 1.0)/2.2)",
+                    # "source": "0",
                     "params": {
                         "query_vector": vector_query
                     }
@@ -96,8 +97,8 @@ if __name__ == '__main__':
                         }
                     }
                 },
-                # "query_weight": 0.7,
-                # "rescore_query_weight": 1.2,
+                "query_weight": 5,
+                "rescore_query_weight": 1,
             }
         }
     }
