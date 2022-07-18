@@ -1,12 +1,18 @@
 from elasticsearch import Elasticsearch, helpers
 import csv
 import ast
+from sentence_transformers import SentenceTransformer
 
 es = Elasticsearch(
     cloud_id='My_deployment:dXMtY2VudHJhbDEuZ2NwLmNsb3VkLmVzLmlvOjQ0MyQxNzZkZTlkOTlhYTQ0N2U5YTg0YmUxOWQyZjViNDYxMyRiYTQ4NTAwZGQ5ZDg0MDAwODFlNmUxOTg3M2JhNmQ3OQ==',
     basic_auth=("elastic", 'jnrRVZQKvKK0Rx7Y2gVtCT1l')
 )
 
+model_id = "all-mpnet-base-v2"
+st_model = SentenceTransformer(model_id)
+
+def gen_vec(str):
+    return st_model.encode(str).tolist()
 
 def read_csv(filename):
     with open(filename) as f:
