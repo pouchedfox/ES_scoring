@@ -1,7 +1,10 @@
+from math import log
+
 from elasticsearch import Elasticsearch, helpers
 import csv
 import ast
 from sentence_transformers import SentenceTransformer
+import time
 
 es = Elasticsearch(
     cloud_id='My_deployment:dXMtY2VudHJhbDEuZ2NwLmNsb3VkLmVzLmlvOjQ0MyQxNzZkZTlkOTlhYTQ0N2U5YTg0YmUxOWQyZjViNDYxMyRiYTQ4NTAwZGQ5ZDg0MDAwODFlNmUxOTg3M2JhNmQ3OQ==',
@@ -11,8 +14,10 @@ es = Elasticsearch(
 model_id = "all-mpnet-base-v2"
 st_model = SentenceTransformer(model_id)
 
+
 def gen_vec(str):
     return st_model.encode(str).tolist()
+
 
 def read_csv(filename):
     with open(filename) as f:
@@ -23,7 +28,7 @@ def read_csv(filename):
 
 dim = 768
 n = 1000
-query_text = "dig the loss of a patient"
+query_text = "King James plays basketball with cartoon characters"
 
 if __name__ == '__main__':
     mapping = {
@@ -58,11 +63,51 @@ if __name__ == '__main__':
 
     es.indices.refresh(index="test-index")
 
-    # first round, compute max_score for text search
-    text_query = {"match": {"text": query_text}}
-    resp = es.search(index="test-index", body={"query": text_query})
-    max_score = resp['hits']['hits'][0]["_score"]
+    start = time.time()
 
+    term_res = es.mtermvectors(
+        index="test-index",
+        body=dict(
+            # ids=list(range(n)),
+            ids=[0, 1],
+            term_statistics=True,
+            field_statistics=True,
+            fields=["text"]
+        )
+    )
+
+    docCount = n
+    k1 = 1.2
+    b = 0.75
+    avg_doc_len = None
+
+    max_score = -1
+    for doc in term_res['docs']:
+        # print(doc['_id'])
+        # print(doc)
+        df_arr = []
+        tf_arr = []
+        doc_len = 0
+        info = doc['term_vectors']['text']
+        if avg_doc_len is None:
+            avg_doc_len = info['field_statistics']['sum_ttf'] / info['field_statistics']['doc_count']
+        for term in info['terms']:
+            doc_len += info['terms'][term]['term_freq']
+            tf_arr.append(info['terms'][term]['term_freq'])
+            df_arr.append(info['terms'][term]['doc_freq'])
+        for i, tf in enumerate(tf_arr):
+            df = df_arr[i]
+            score = log(1 + (docCount - df + 0.5) / (df + 0.5)) * (tf) / (tf + k1 * (1 - b + b * doc_len / avg_doc_len))
+            if score > max_score:
+                max_score = score
+
+    print(max_score*len(query_text.split()))
+
+    text_query = {"match": {"text": query_text}}
+    # first round, compute max_score for text search
+    # resp = es.search(index="test-index", body={"query": text_query})
+    # max_score = resp['hits']['hits'][0]["_score"]
+    # print(max_score)
     # vector_query = [sum(value) for value in zip(ast.literal_eval(docs[qid]['desc_vec'])[:dim], [0.0001]*dim)]
     vector_query = gen_vec(query_text)
     # second and third round, compute vector score followd by text score as rescore
@@ -74,7 +119,7 @@ if __name__ == '__main__':
                     "match_all": {}
                 },
                 "script": {
-                    "source": "1/(1-(cosineSimilarity(params.query_vector, 'vector') + 1.0)/2.2)",
+                    "source": "1/(1-(cosineSimilarity(params.query_vector, 'vector') + 1.0)/2.01)",
                     # "source": "0",
                     "params": {
                         "query_vector": vector_query
@@ -90,14 +135,14 @@ if __name__ == '__main__':
                     "script_score": {
                         "query": text_query,
                         "script": {
-                            "source": "1/(1-_score/params.max_score/1.1)",
+                            "source": "1/(1-_score/params.max_score)",
                             "params": {
-                                "max_score": max_score,
+                                "max_score": max_score * len(query_text.split()),
                             }
                         }
                     }
                 },
-                "query_weight": 5,
+                "query_weight": 1.5,
                 "rescore_query_weight": 1,
             }
         }
@@ -108,3 +153,6 @@ if __name__ == '__main__':
     for hit in resp['hits']['hits']:
         print("id: {}\t||\tscore: {}".format(hit["_id"], hit["_score"]))
         print("text: %(text)s" % hit["_source"])
+
+    end = time.time()
+    print(end-start)
