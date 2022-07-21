@@ -104,12 +104,13 @@ if __name__ == '__main__':
     print(max_score*len(query_text.split()))
 
     text_query = {"match": {"text": query_text}}
+    vector_query = gen_vec(query_text)
+
     # first round, compute max_score for text search
     # resp = es.search(index="test-index", body={"query": text_query})
     # max_score = resp['hits']['hits'][0]["_score"]
     # print(max_score)
-    # vector_query = [sum(value) for value in zip(ast.literal_eval(docs[qid]['desc_vec'])[:dim], [0.0001]*dim)]
-    vector_query = gen_vec(query_text)
+
     # second and third round, compute vector score followd by text score as rescore
     resp = es.search(index="test-index", size=100, body=
     {
