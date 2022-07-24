@@ -28,7 +28,7 @@ def read_csv(filename):
 
 dim = 768
 n = 1000
-query_text = "King James plays basketball with cartoon characters"
+query_text = "Lebro and his"
 
 if __name__ == '__main__':
     mapping = {
@@ -103,7 +103,7 @@ if __name__ == '__main__':
 
     print(max_score*len(query_text.split()))
 
-    text_query = {"match": {"text": query_text}}
+    text_query = {"multi_match": {"query": query_text, "fields": ["text"], "fuzziness": "Auto"}}
     vector_query = gen_vec(query_text)
 
     # first round, compute max_score for text search
@@ -112,7 +112,7 @@ if __name__ == '__main__':
     # print(max_score)
 
     # second and third round, compute vector score followd by text score as rescore
-    resp = es.search(index="test-index", size=100, body=
+    resp = es.search(index="test-index", explain=True, size=100, body=
     {
         "query": {
             "script_score": {
@@ -133,14 +133,65 @@ if __name__ == '__main__':
             "query": {
                 "score_mode": "total",
                 "rescore_query": {
-                    "script_score": {
-                        "query": text_query,
-                        "script": {
-                            "source": "1/(1-_score/params.max_score)",
-                            "params": {
-                                "max_score": max_score * len(query_text.split()),
+                    # "script_score": {
+                    #     "query": text_query,
+                    #     "script": {
+                    #         # "source": "1/(1-_score/params.max_score)",
+                    #         "source": "_score",
+                    #         "params": {
+                    #             "max_score": max_score * len(query_text.split()),
+                    #         }
+                    #     }
+                    # }
+                    "bool": {
+                        "must": [
+                            {
+                                "bool": {
+                                    "should": [
+                                        {
+                                            "bool": {
+                                                "should": [
+                                                    {
+                                                        "multi_match": {
+                                                            "query": query_text,
+                                                            "fields": [
+                                                                "text"
+                                                            ],
+                                                            "boost": 0.75,
+                                                            "type": "phrase_prefix"
+                                                        }
+                                                    },
+                                                    {
+                                                        "multi_match": {
+                                                            "query": query_text,
+                                                            "fields": [
+                                                                "text"
+                                                            ],
+                                                            "boost": 2.25
+                                                        }
+                                                    },
+                                                    {
+                                                        "multi_match": {
+                                                            "query": query_text,
+                                                            "fields": [
+                                                                "text"
+                                                            ],
+                                                            "boost": 0.075,
+                                                            "fuzziness": "AUTO"
+                                                        }
+                                                    },
+                                                    {
+                                                        "match_all": {
+                                                            "boost": 0
+                                                        }
+                                                    }
+                                                ]
+                                            }
+                                        }
+                                    ]
+                                }
                             }
-                        }
+                        ]
                     }
                 },
                 "query_weight": 1.5,
@@ -154,6 +205,8 @@ if __name__ == '__main__':
     for hit in resp['hits']['hits']:
         print("id: {}\t||\tscore: {}".format(hit["_id"], hit["_score"]))
         print("text: %(text)s" % hit["_source"])
+
+    print(resp['hits']['hits'][3]['_explanation'])
 
     end = time.time()
     print(end-start)
